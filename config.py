@@ -1,14 +1,18 @@
 """Central configuration for the Sabrina Zohar Advice Bot pipeline."""
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # --- Paths -----------------------------------------------------------------
-ROOT_DIR = Path(__file__).resolve().parent
+# When frozen by PyInstaller (the desktop .exe), anchor data and .env next to
+# the executable so the app works from a desktop shortcut regardless of cwd.
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+ROOT_DIR = Path(sys.executable).resolve().parent if IS_FROZEN else Path(__file__).resolve().parent
+
+load_dotenv(ROOT_DIR / ".env")
 DATA_DIR = ROOT_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"                      # audio + per-video metadata
 AUDIO_DIR = RAW_DIR / "audio"

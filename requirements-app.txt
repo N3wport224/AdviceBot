@@ -1,0 +1,7 @@
+# Runtime dependencies for the desktop app (.exe) only — the scraping/
+# transcription stack (yt-dlp, faster-whisper, instaloader) is NOT bundled;
+# build the corpus separately and copy the data/ folder next to the exe.
+anthropic>=0.60.0
+numpy>=1.26
+scikit-learn>=1.4
+python-dotenv>=1.0

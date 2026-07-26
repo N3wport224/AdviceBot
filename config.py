@@ -24,8 +24,10 @@ for _d in (AUDIO_DIR, METADATA_DIR, TRANSCRIPTS_DIR, PROCESSED_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # --- Sources ---------------------------------------------------------------
-# "The Sabrina Zohar Show" — full episodes tab of the channel.
-YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@sabrina.zohar/videos"
+# Sabrina Zohar's channel (host of "The Sabrina Zohar Show"), addressed by its
+# permanent channel ID — verified against multiple sources; @-handles can change
+# and her YouTube handle differs from her @sabrina.zohar Instagram/TikTok handle.
+YOUTUBE_CHANNEL_URL = "https://www.youtube.com/channel/UCSKQduzS78E6-I9tx0jqjpw/videos"
 INSTAGRAM_TARGET_PROFILE = os.getenv("INSTAGRAM_TARGET_PROFILE", "sabrina.zohar")
 
 # --- Transcription ---------------------------------------------------------

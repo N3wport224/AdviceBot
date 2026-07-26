@@ -1,0 +1,19 @@
+# Core LLM SDK
+anthropic>=0.60.0
+
+# Data collection
+yt-dlp>=2024.10.0
+instaloader>=4.13
+
+# Transcription (CTranslate2-based local Whisper)
+faster-whisper>=1.0.0
+
+# Retrieval / data processing
+numpy>=1.26
+scikit-learn>=1.4
+
+# Config
+python-dotenv>=1.0
+
+# Optional — better RAG embeddings than the TF-IDF fallback:
+# sentence-transformers>=3.0

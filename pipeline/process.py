@@ -29,10 +29,12 @@ FILLERS = re.compile(r"\b(?:um+|uh+|erm+)\b[, ]*", re.IGNORECASE)
 
 
 def clean_text(text: str) -> str:
-    """Normalize whitespace, strip fillers and sponsor/CTA boilerplate."""
+    """Normalize whitespace, strip fillers, hashtags, and sponsor/CTA boilerplate."""
     for pattern in BOILERPLATE_PATTERNS:
         text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
     text = FILLERS.sub("", text)
+    # Hashtags/mentions from social captions add noise to the retrieval index.
+    text = re.sub(r"(?<!\w)[#@][\w.]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 

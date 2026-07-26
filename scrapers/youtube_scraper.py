@@ -36,15 +36,19 @@ def list_channel_videos(channel_url: str = YOUTUBE_CHANNEL_URL, max_videos: int 
         info = ydl.extract_info(channel_url, download=False)
 
     entries = [e for e in (info.get("entries") or []) if e]
-    videos = [
-        {
-            "video_id": e["id"],
-            "title": e.get("title", ""),
-            "url": e.get("url") or f"https://www.youtube.com/watch?v={e['id']}",
-            "duration": e.get("duration"),
-        }
-        for e in entries
-    ]
+    videos = []
+    for e in entries:
+        video_id = e.get("id")
+        if not video_id:  # deleted/private videos can yield sparse flat entries
+            continue
+        videos.append(
+            {
+                "video_id": video_id,
+                "title": e.get("title", ""),
+                "url": e.get("url") or f"https://www.youtube.com/watch?v={video_id}",
+                "duration": e.get("duration"),
+            }
+        )
     log.info("Found %d videos on %s", len(videos), channel_url)
     return videos
 

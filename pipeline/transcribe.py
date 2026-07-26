@@ -23,6 +23,10 @@ from config import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("transcribe")
 
+# Only feed real audio files to Whisper — interrupted yt-dlp downloads leave
+# .part/.ytdl files in the same directory.
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".webm", ".wav", ".opus", ".ogg", ".flac", ".aac"}
+
 _model = None
 
 
@@ -84,6 +88,8 @@ def transcribe_all(force: bool = False) -> int:
     """Transcribe every audio file that has metadata but no transcript yet."""
     count = 0
     for audio_path in sorted(AUDIO_DIR.iterdir()):
+        if not audio_path.is_file() or audio_path.suffix.lower() not in AUDIO_EXTENSIONS:
+            continue
         video_id = audio_path.stem
         out_path = TRANSCRIPTS_DIR / f"{video_id}.json"
         meta_path = METADATA_DIR / f"{video_id}.json"

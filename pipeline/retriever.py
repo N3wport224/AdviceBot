@@ -85,18 +85,28 @@ class CorpusRetriever:
             retriever = cls().build()
             retriever.save()
             return retriever
-        with open(INDEX_PATH, "rb") as f:
-            payload = pickle.load(f)
-        retriever = cls()
-        retriever.backend = payload["backend"]
-        retriever.records = payload["records"]
-        retriever._embeddings = payload["embeddings"]
-        retriever._vectorizer = payload["vectorizer"]
-        retriever._tfidf_matrix = payload["tfidf_matrix"]
-        if retriever.backend == "sentence-transformers":
-            from sentence_transformers import SentenceTransformer
+        try:
+            with open(INDEX_PATH, "rb") as f:
+                payload = pickle.load(f)
+            retriever = cls()
+            retriever.backend = payload["backend"]
+            retriever.records = payload["records"]
+            retriever._embeddings = payload["embeddings"]
+            retriever._vectorizer = payload["vectorizer"]
+            retriever._tfidf_matrix = payload["tfidf_matrix"]
+            if retriever.backend == "sentence-transformers":
+                from sentence_transformers import SentenceTransformer
 
-            retriever._st_model = SentenceTransformer(EMBED_MODEL_NAME)
+                retriever._st_model = SentenceTransformer(EMBED_MODEL_NAME)
+            return retriever
+        except ImportError:
+            log.warning(
+                "Saved index requires sentence-transformers, which is not installed — rebuilding"
+            )
+        except Exception as exc:  # corrupt/incompatible pickle, missing keys, …
+            log.warning("Saved index unreadable (%s: %s) — rebuilding", type(exc).__name__, exc)
+        retriever = cls().build()
+        retriever.save()
         return retriever
 
     # -- search --------------------------------------------------------------

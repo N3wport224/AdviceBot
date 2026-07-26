@@ -20,6 +20,7 @@ import argparse
 import base64
 import logging
 import mimetypes
+import shlex
 import sys
 from pathlib import Path
 
@@ -45,7 +46,10 @@ def get_client() -> anthropic.Anthropic:
 
 
 def get_retriever():
-    """Load the RAG index once; degrade gracefully if the corpus isn't built yet."""
+    """Load the RAG index once; degrade gracefully if it's missing or broken.
+
+    RAG is best-effort: any failure here must never take down the advice call.
+    """
     global _retriever
     if _retriever is None:
         try:
@@ -55,6 +59,10 @@ def get_retriever():
         except FileNotFoundError:
             log.warning("No corpus/index found — answering without RAG context. "
                         "Run `python run_pipeline.py` to build it.")
+            _retriever = False
+        except Exception as exc:
+            log.warning("RAG index unavailable (%s: %s) — answering without context",
+                        type(exc).__name__, exc)
             _retriever = False
     return _retriever or None
 
@@ -76,7 +84,12 @@ def build_rag_context(query: str, top_k: int = RAG_TOP_K) -> str:
     retriever = get_retriever()
     if retriever is None:
         return ""
-    hits = retriever.search(query, top_k=top_k)
+    try:
+        hits = retriever.search(query, top_k=top_k)
+    except Exception as exc:
+        log.warning("RAG search failed (%s: %s) — answering without context",
+                    type(exc).__name__, exc)
+        return ""
     if not hits:
         return ""
     lines = []
@@ -144,7 +157,12 @@ def generate_sabrina_advice(
 
     messages = (history or []) + [{"role": "user", "content": content}]
 
-    client = get_client()
+    try:
+        client = get_client()
+    except anthropic.AnthropicError as exc:
+        # e.g. no API key resolvable at client construction
+        raise RuntimeError(f"Could not create Anthropic client: {exc}")
+
     try:
         response = client.messages.create(
             model=ANTHROPIC_MODEL,
@@ -157,8 +175,16 @@ def generate_sabrina_advice(
             f"Model {ANTHROPIC_MODEL!r} not found — it may be retired. "
             "Set ANTHROPIC_MODEL to a current model (e.g. claude-sonnet-5)."
         )
+    except anthropic.AuthenticationError:
+        raise RuntimeError(
+            "Anthropic API key missing or invalid — set ANTHROPIC_API_KEY in your .env"
+        )
     except anthropic.RateLimitError:
         raise RuntimeError("Rate limited by the Anthropic API — wait a moment and retry.")
+    except anthropic.APIStatusError as exc:
+        raise RuntimeError(f"Anthropic API error {exc.status_code}: {exc.message}")
+    except anthropic.APIConnectionError:
+        raise RuntimeError("Could not reach the Anthropic API — check your network connection.")
 
     if response.stop_reason == "refusal":
         return (
@@ -188,10 +214,17 @@ def chat_loop():
             break
 
         image_path = None
-        if raw.startswith("/image "):
-            parts = raw[len("/image "):].split(maxsplit=1)
-            image_path = parts[0]
-            raw = parts[1] if len(parts) > 1 else ""
+        if raw.startswith("/image"):
+            # shlex so quoted paths with spaces work: /image "my shot.png" question
+            try:
+                parts = shlex.split(raw)
+            except ValueError:
+                parts = raw.split()
+            if len(parts) < 2:
+                print("[error] usage: /image path/to/screenshot.png [your question]")
+                continue
+            image_path = parts[1]
+            raw = " ".join(parts[2:])
         try:
             reply = generate_sabrina_advice(raw, image_path=image_path, history=history)
         except (RuntimeError, FileNotFoundError, ValueError) as exc:
@@ -210,7 +243,11 @@ if __name__ == "__main__":
     if args.chat:
         chat_loop()
     elif args.query or args.image:
-        print(generate_sabrina_advice(args.query, image_path=args.image))
+        try:
+            print(generate_sabrina_advice(args.query, image_path=args.image))
+        except (RuntimeError, FileNotFoundError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
     else:
         parser.print_help()
         sys.exit(1)

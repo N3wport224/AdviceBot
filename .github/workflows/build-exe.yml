@@ -1,0 +1,38 @@
+name: build-windows-exe
+
+on:
+  push:
+    branches: ["main", "claude/sabrina-zohar-chatbot-2k20dt"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements-app.txt pyinstaller
+
+      # --windowed: the exe runs with no console window at all.
+      - name: Build SabrinaAdvisor.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name SabrinaAdvisor
+          --hidden-import sklearn.feature_extraction.text
+          --hidden-import sklearn.metrics.pairwise
+          gui_app.py
+
+      - name: Smoke-check the binary exists
+        run: |
+          if (!(Test-Path dist/SabrinaAdvisor.exe)) { exit 1 }
+          Get-Item dist/SabrinaAdvisor.exe | Format-List Name,Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SabrinaAdvisor-windows
+          path: dist/SabrinaAdvisor.exe
+          if-no-files-found: error

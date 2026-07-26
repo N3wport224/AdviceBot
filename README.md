@@ -100,6 +100,26 @@ Every record in `data/processed/sabrina_corpus.jsonl`:
 }
 ```
 
+## Desktop app (.exe, no terminal window)
+
+`gui_app.py` is a tkinter chat app (question box + "Attach screenshot…") that
+runs entirely windowless-console: packaged with PyInstaller `--windowed`, it
+opens straight into the chat UI and never shows a terminal. On first run it
+prompts for your Anthropic API key and saves it to a `.env` next to the exe.
+
+Two ways to get the exe:
+
+1. **GitHub Actions (no local toolchain needed):** the `build-windows-exe`
+   workflow builds `SabrinaAdvisor.exe` on a Windows runner on every push (or
+   manually via "Run workflow"). Download the `SabrinaAdvisor-windows` artifact
+   from the run page, put the exe anywhere (e.g. your Desktop), done.
+2. **Locally on Windows:** double-click `build_exe.bat` (needs Python 3.11+).
+   The exe lands in `dist\SabrinaAdvisor.exe`.
+
+To ground answers in the scraped corpus, copy the `data/` folder (built by
+`run_pipeline.py`) into the same directory as the exe. Without it the app still
+works — it just answers from the persona prompt alone.
+
 ## Notes & caveats
 
 - **Model:** the original spec named `claude-3-5-sonnet`, which was retired by

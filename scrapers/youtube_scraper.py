@@ -35,6 +35,12 @@ def list_channel_videos(channel_url: str = YOUTUBE_CHANNEL_URL, max_videos: int 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(channel_url, download=False)
 
+    # With ignoreerrors=True, yt-dlp returns None instead of raising when the
+    # channel is unreachable (network/proxy block, bad URL, region lock).
+    if info is None:
+        log.error("Could not enumerate %s — channel unreachable or blocked", channel_url)
+        return []
+
     entries = [e for e in (info.get("entries") or []) if e]
     videos = []
     for e in entries:

@@ -41,7 +41,15 @@ _retriever = None
 def get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        # The SDK defers the missing-credentials failure to request time (a bare
+        # TypeError from header building) — check up front for a clean error.
+        if getattr(client, "api_key", None) is None and getattr(client, "auth_token", None) is None:
+            raise RuntimeError(
+                "No Anthropic credentials found — set ANTHROPIC_API_KEY in your "
+                "environment or .env file (see .env.example)."
+            )
+        _client = client
     return _client
 
 

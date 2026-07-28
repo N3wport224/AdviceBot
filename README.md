@@ -65,8 +65,10 @@ python -m pipeline.retriever --rebuild
 # Text question
 python -m advisor.sabrina_advisor "He takes 8 hours to text back but says he likes me. What do I do?"
 
-# Screenshot of a conversation (+ optional question)
+# Screenshot(s) of a conversation (+ optional question) — up to 10 per message
 python -m advisor.sabrina_advisor "Is this guy breadcrumbing me?" --image ./screenshot.png
+python -m advisor.sabrina_advisor "How did this convo go off the rails?" \
+    --image shot1.png --image shot2.png --image shot3.png
 
 # Interactive chat
 python -m advisor.sabrina_advisor --chat
@@ -79,7 +81,7 @@ from advisor.sabrina_advisor import generate_sabrina_advice
 
 reply = generate_sabrina_advice(
     "Should I text him first?",
-    image_path="convo.png",   # optional
+    image_paths=["convo1.png", "convo2.png"],   # optional, up to 10
 )
 print(reply)
 ```
@@ -102,7 +104,8 @@ Every record in `data/processed/sabrina_corpus.jsonl`:
 
 ## Desktop app (.exe, no terminal window)
 
-`gui_app.py` is a tkinter chat app (question box + "Attach screenshot…") that
+`gui_app.py` is a tkinter chat app (question box + "Attach screenshots…", up to
+10 images per message) that
 runs entirely windowless-console: packaged with PyInstaller `--windowed`, it
 opens straight into the chat UI and never shows a terminal. On first run it
 prompts for your Anthropic API key and saves it to a `.env` next to the exe.

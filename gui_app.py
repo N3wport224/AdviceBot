@@ -18,7 +18,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog
 
-from config import ROOT_DIR
+from config import MAX_IMAGES_PER_MESSAGE, ROOT_DIR
 
 APP_TITLE = "Sabrina Zohar Advice Bot"
 
@@ -53,7 +53,7 @@ class AdvisorApp:
         self.root.minsize(520, 400)
 
         self.history: list[dict] = []
-        self.image_path: str | None = None
+        self.image_paths: list[str] = []
         self.results: queue.Queue = queue.Queue()
         self.busy = False
 
@@ -67,10 +67,10 @@ class AdvisorApp:
         # --- Attachment row ---
         attach_row = tk.Frame(root)
         attach_row.pack(fill="x", padx=8)
-        tk.Button(attach_row, text="Attach screenshot…", command=self.pick_image).pack(side="left")
+        tk.Button(attach_row, text="Attach screenshots…", command=self.pick_images).pack(side="left")
         self.image_label = tk.Label(attach_row, text="", anchor="w", fg="#555555")
         self.image_label.pack(side="left", padx=8)
-        self.clear_btn = tk.Button(attach_row, text="✕", command=self.clear_image)
+        self.clear_btn = tk.Button(attach_row, text="✕", command=self.clear_images)
 
         # --- Input row ---
         input_row = tk.Frame(root)
@@ -86,8 +86,9 @@ class AdvisorApp:
         self.status.pack(fill="x", padx=8, pady=(0, 6))
 
         self.append_meta(
-            "Ask a dating/relationship question, or attach a screenshot of a "
-            "conversation. Shift+Enter for a new line."
+            f"Ask a dating/relationship question, or attach up to "
+            f"{MAX_IMAGES_PER_MESSAGE} screenshots of a conversation. "
+            "Shift+Enter for a new line."
         )
         self.root.after(100, self.poll_results)
 
@@ -106,20 +107,39 @@ class AdvisorApp:
         self.chat.configure(state="disabled")
         self.chat.see("end")
 
-    def pick_image(self):
-        path = filedialog.askopenfilename(
-            title="Choose a screenshot",
+    def pick_images(self):
+        paths = filedialog.askopenfilenames(
+            title=f"Choose up to {MAX_IMAGES_PER_MESSAGE} screenshots",
             filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.webp"), ("All files", "*.*")],
         )
-        if path:
-            self.image_path = path
-            self.image_label.config(text=os.path.basename(path))
+        if not paths:
+            return
+        room = MAX_IMAGES_PER_MESSAGE - len(self.image_paths)
+        if len(paths) > room:
+            messagebox.showwarning(
+                APP_TITLE,
+                f"Max {MAX_IMAGES_PER_MESSAGE} screenshots per message — "
+                f"keeping the first {room} of your selection.",
+            )
+            paths = paths[:room]
+        self.image_paths.extend(paths)
+        self.update_image_label()
+
+    def update_image_label(self):
+        n = len(self.image_paths)
+        if n == 0:
+            self.image_label.config(text="")
+            self.clear_btn.pack_forget()
+        elif n == 1:
+            self.image_label.config(text=os.path.basename(self.image_paths[0]))
+            self.clear_btn.pack(side="left")
+        else:
+            self.image_label.config(text=f"{n} screenshots attached")
             self.clear_btn.pack(side="left")
 
-    def clear_image(self):
-        self.image_path = None
-        self.image_label.config(text="")
-        self.clear_btn.pack_forget()
+    def clear_images(self):
+        self.image_paths = []
+        self.update_image_label()
 
     def on_enter(self, event):
         if not (event.state & 0x0001):  # plain Enter (no Shift) sends
@@ -133,34 +153,36 @@ class AdvisorApp:
         if self.busy:
             return
         query = self.entry.get("1.0", "end").strip()
-        image_path = self.image_path
-        if not query and not image_path:
+        image_paths = list(self.image_paths)
+        if not query and not image_paths:
             return
         if not ensure_api_key(self.root):
             messagebox.showwarning(APP_TITLE, "An Anthropic API key is required to get advice.")
             return
 
         self.entry.delete("1.0", "end")
-        shown = query or "(screenshot)"
-        if query and image_path:
-            shown = f"{query}  [+ {os.path.basename(image_path)}]"
-        elif image_path:
-            shown = f"[{os.path.basename(image_path)}]"
+        if len(image_paths) == 1:
+            attach_note = f"[+ {os.path.basename(image_paths[0])}]"
+        elif image_paths:
+            attach_note = f"[+ {len(image_paths)} screenshots]"
+        else:
+            attach_note = ""
+        shown = f"{query}  {attach_note}".strip() if query else attach_note or "(screenshot)"
         self.append("You", shown, "you")
-        self.clear_image()
+        self.clear_images()
 
         self.busy = True
         self.send_btn.config(state="disabled")
         self.status.config(text="Thinking…")
         threading.Thread(
-            target=self._worker, args=(query, image_path), daemon=True
+            target=self._worker, args=(query, image_paths), daemon=True
         ).start()
 
-    def _worker(self, query: str, image_path: str | None):
+    def _worker(self, query: str, image_paths: list[str]):
         try:
             from advisor.sabrina_advisor import generate_sabrina_advice
 
-            reply = generate_sabrina_advice(query, image_path=image_path, history=self.history)
+            reply = generate_sabrina_advice(query, image_paths=image_paths, history=self.history)
             self.results.put(("ok", reply))
         except Exception as exc:  # surfaced in the UI — the app must never die silently
             self.results.put(("err", f"{exc}"))

@@ -27,7 +27,7 @@ from pathlib import Path
 import anthropic
 
 from advisor.prompts import SABRINA_SYSTEM_PROMPT
-from config import ANTHROPIC_MODEL, MAX_RESPONSE_TOKENS, RAG_TOP_K
+from config import ANTHROPIC_MODEL, MAX_IMAGES_PER_MESSAGE, MAX_RESPONSE_TOKENS, RAG_TOP_K
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("sabrina_advisor")
@@ -117,22 +117,40 @@ def generate_sabrina_advice(
     user_query: str,
     image_path: str | Path | None = None,
     history: list[dict] | None = None,
+    image_paths: list[str | Path] | None = None,
+    on_delta=None,
 ) -> str:
-    """Generate advice in Sabrina's style from text and/or a screenshot.
+    """Generate advice in Sabrina's style from text and/or screenshots.
 
     Args:
-        user_query: The user's question. May be empty if an image is provided.
-        image_path: Optional path to a screenshot (PNG/JPEG/GIF/WebP).
+        user_query: The user's question. May be empty if images are provided.
+        image_path: Optional path to a single screenshot (kept for backward
+            compatibility; combined with ``image_paths`` if both are given).
         history: Optional prior conversation as Messages-API message dicts;
             the new exchange is appended to it in place, enabling multi-turn chat.
+        image_paths: Optional list of screenshot paths (PNG/JPEG/GIF/WebP),
+            up to MAX_IMAGES_PER_MESSAGE (10) per message.
+        on_delta: Optional callable(str) invoked with each text fragment as it
+            streams from the model. When set, the request uses the streaming
+            API; the full reply is still returned (and stored in history).
 
     Returns:
         The assistant's reply text.
     """
-    if not user_query and not image_path:
-        raise ValueError("Provide a question, an image, or both.")
+    paths: list = []
+    if image_path:
+        paths.append(image_path)
+    if image_paths:
+        paths.extend(image_paths)
+    if len(paths) > MAX_IMAGES_PER_MESSAGE:
+        raise ValueError(
+            f"Too many images: {len(paths)} attached, max {MAX_IMAGES_PER_MESSAGE} per message."
+        )
 
-    # Retrieve grounding excerpts. When only an image is given, use a generic
+    if not user_query and not paths:
+        raise ValueError("Provide a question, image(s), or both.")
+
+    # Retrieve grounding excerpts. When only images are given, use a generic
     # retrieval query so we still surface on-topic material.
     retrieval_query = user_query or "reading text message conversations, mixed signals, effort, interest level"
     rag_context = build_rag_context(retrieval_query)
@@ -149,17 +167,21 @@ def generate_sabrina_advice(
     if rag_context:
         system_blocks.append({"type": "text", "text": rag_context})
 
-    # User content: image first (if any), then the text.
+    # User content: images first (numbered when there are several, so the model
+    # can refer to "screenshot 3"), then the text.
     content: list[dict] = []
-    if image_path:
-        content.append(encode_image(image_path))
-        content.append(
-            {
-                "type": "text",
-                "text": user_query
-                or "Here's a screenshot of a conversation I'm in. What's really going on here, and what should I do?",
-            }
+    for i, p in enumerate(paths, 1):
+        if len(paths) > 1:
+            content.append({"type": "text", "text": f"Screenshot {i} of {len(paths)}:"})
+        content.append(encode_image(p))
+    if paths:
+        default_q = (
+            "Here are screenshots of a conversation I'm in (in order). What's "
+            "really going on here, and what should I do?"
+            if len(paths) > 1
+            else "Here's a screenshot of a conversation I'm in. What's really going on here, and what should I do?"
         )
+        content.append({"type": "text", "text": user_query or default_q})
     else:
         content.append({"type": "text", "text": user_query})
 
@@ -172,12 +194,23 @@ def generate_sabrina_advice(
         raise RuntimeError(f"Could not create Anthropic client: {exc}")
 
     try:
-        response = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=MAX_RESPONSE_TOKENS,
-            system=system_blocks,
-            messages=messages,
-        )
+        if on_delta is None:
+            response = client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=MAX_RESPONSE_TOKENS,
+                system=system_blocks,
+                messages=messages,
+            )
+        else:
+            with client.messages.stream(
+                model=ANTHROPIC_MODEL,
+                max_tokens=MAX_RESPONSE_TOKENS,
+                system=system_blocks,
+                messages=messages,
+            ) as stream:
+                for text in stream.text_stream:
+                    on_delta(text)
+                response = stream.get_final_message()
     except anthropic.NotFoundError:
         raise RuntimeError(
             f"Model {ANTHROPIC_MODEL!r} not found — it may be retired. "
@@ -221,20 +254,25 @@ def chat_loop():
         if not raw or raw.lower() in {"quit", "exit"}:
             break
 
-        image_path = None
+        image_paths: list[str] = []
         if raw.startswith("/image"):
-            # shlex so quoted paths with spaces work: /image "my shot.png" question
+            # shlex so quoted paths with spaces work:
+            #   /image shot1.png "my shot 2.png" shot3.png your question here
+            # Leading tokens that exist as files are treated as screenshots (up
+            # to 10); everything after the first non-file token is the question.
             try:
                 parts = shlex.split(raw)
             except ValueError:
                 parts = raw.split()
-            if len(parts) < 2:
-                print("[error] usage: /image path/to/screenshot.png [your question]")
+            rest = parts[1:]
+            while rest and os.path.isfile(rest[0]) and len(image_paths) < 10:
+                image_paths.append(rest.pop(0))
+            if not image_paths:
+                print("[error] usage: /image shot1.png [shot2.png …] [your question]")
                 continue
-            image_path = parts[1]
-            raw = " ".join(parts[2:])
+            raw = " ".join(rest)
         try:
-            reply = generate_sabrina_advice(raw, image_path=image_path, history=history)
+            reply = generate_sabrina_advice(raw, image_paths=image_paths, history=history)
         except (RuntimeError, FileNotFoundError, ValueError) as exc:
             print(f"[error] {exc}")
             continue
@@ -244,7 +282,13 @@ def chat_loop():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sabrina Zohar-style advice from Claude")
     parser.add_argument("query", nargs="?", default="", help="Your question")
-    parser.add_argument("--image", type=str, default=None, help="Path to a conversation screenshot")
+    parser.add_argument(
+        "--image",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help="Path to a conversation screenshot (repeatable, up to 10)",
+    )
     parser.add_argument("--chat", action="store_true", help="Interactive multi-turn chat")
     args = parser.parse_args()
 
@@ -252,7 +296,7 @@ if __name__ == "__main__":
         chat_loop()
     elif args.query or args.image:
         try:
-            print(generate_sabrina_advice(args.query, image_path=args.image))
+            print(generate_sabrina_advice(args.query, image_paths=args.image or []))
         except (RuntimeError, FileNotFoundError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             sys.exit(1)

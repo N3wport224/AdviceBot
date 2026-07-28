@@ -5,3 +5,4 @@ anthropic>=0.60.0
 numpy>=1.26
 scikit-learn>=1.4
 python-dotenv>=1.0
+pillow>=10.0   # Ctrl+V clipboard screenshot paste

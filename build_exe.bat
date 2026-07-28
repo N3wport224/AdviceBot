@@ -6,6 +6,7 @@ REM appears — the app opens straight into the chat UI.
 pip install -r requirements-app.txt pyinstaller || goto :error
 
 pyinstaller --noconfirm --onefile --windowed --name SabrinaAdvisor ^
+  --icon assets\app.ico ^
   --hidden-import sklearn.feature_extraction.text ^
   --hidden-import sklearn.metrics.pairwise ^
   gui_app.py || goto :error

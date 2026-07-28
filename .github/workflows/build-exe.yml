@@ -22,6 +22,7 @@ jobs:
       - name: Build SabrinaAdvisor.exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name SabrinaAdvisor
+          --icon assets/app.ico
           --hidden-import sklearn.feature_extraction.text
           --hidden-import sklearn.metrics.pairwise
           gui_app.py

@@ -118,6 +118,7 @@ def generate_sabrina_advice(
     image_path: str | Path | None = None,
     history: list[dict] | None = None,
     image_paths: list[str | Path] | None = None,
+    on_delta=None,
 ) -> str:
     """Generate advice in Sabrina's style from text and/or screenshots.
 
@@ -129,6 +130,9 @@ def generate_sabrina_advice(
             the new exchange is appended to it in place, enabling multi-turn chat.
         image_paths: Optional list of screenshot paths (PNG/JPEG/GIF/WebP),
             up to MAX_IMAGES_PER_MESSAGE (10) per message.
+        on_delta: Optional callable(str) invoked with each text fragment as it
+            streams from the model. When set, the request uses the streaming
+            API; the full reply is still returned (and stored in history).
 
     Returns:
         The assistant's reply text.
@@ -190,12 +194,23 @@ def generate_sabrina_advice(
         raise RuntimeError(f"Could not create Anthropic client: {exc}")
 
     try:
-        response = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=MAX_RESPONSE_TOKENS,
-            system=system_blocks,
-            messages=messages,
-        )
+        if on_delta is None:
+            response = client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=MAX_RESPONSE_TOKENS,
+                system=system_blocks,
+                messages=messages,
+            )
+        else:
+            with client.messages.stream(
+                model=ANTHROPIC_MODEL,
+                max_tokens=MAX_RESPONSE_TOKENS,
+                system=system_blocks,
+                messages=messages,
+            ) as stream:
+                for text in stream.text_stream:
+                    on_delta(text)
+                response = stream.get_final_message()
     except anthropic.NotFoundError:
         raise RuntimeError(
             f"Model {ANTHROPIC_MODEL!r} not found — it may be retired. "

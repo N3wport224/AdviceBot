@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Heart,
   ImagePlus,
+  LockKeyhole,
   MessageCircleHeart,
   Sparkles,
   Wind,
@@ -16,6 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ACCESS_HEADER, ACCESS_STORAGE_KEY } from "@/lib/auth";
 
 const MAX_IMAGES = 10;
 
@@ -55,12 +57,72 @@ const STARTERS = [
 
 let nextId = 1;
 
+type AuthState = "checking" | "locked" | "unlocked";
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isThinking, setIsThinking] = useState(false); // waiting for first token
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // --- Password gate ---
+  const [authState, setAuthState] = useState<AuthState>("checking");
+  const [accessPassword, setAccessPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+
+  // On launch: a stored password unlocks immediately (PWA home-screen launches
+  // stay logged in). Otherwise ask the server whether a gate is configured at
+  // all, so open deployments never show a lock screen.
+  useEffect(() => {
+    const stored = localStorage.getItem(ACCESS_STORAGE_KEY);
+    if (stored !== null) {
+      setAccessPassword(stored);
+      setAuthState("unlocked"); // trust-then-verify: a stale password 401s → relock
+      return;
+    }
+    fetch("/api/auth")
+      .then((r) => r.json())
+      .then(({ required }) => {
+        if (required) {
+          setAuthState("locked");
+        } else {
+          localStorage.setItem(ACCESS_STORAGE_KEY, "");
+          setAuthState("unlocked");
+        }
+      })
+      .catch(() => setAuthState("locked"));
+  }, []);
+
+  async function unlock(candidate: string): Promise<boolean> {
+    setAuthError("");
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: candidate }),
+      });
+      if (res.status === 401) {
+        setAuthError("That's not it — try again.");
+        return false;
+      }
+      if (!res.ok) throw new Error(`(${res.status})`);
+      localStorage.setItem(ACCESS_STORAGE_KEY, candidate);
+      setAccessPassword(candidate);
+      setAuthState("unlocked");
+      return true;
+    } catch {
+      setAuthError("Couldn't reach the server — check your connection.");
+      return false;
+    }
+  }
+
+  function relock(message: string) {
+    localStorage.removeItem(ACCESS_STORAGE_KEY);
+    setAccessPassword("");
+    setAuthError(message);
+    setAuthState("locked");
+  }
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -141,7 +203,17 @@ export default function ChatPage() {
 
     const assistantId = nextId++;
     try {
-      const res = await fetch("/api/chat", { method: "POST", body: form });
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        body: form,
+        headers: { [ACCESS_HEADER]: accessPassword },
+      });
+      if (res.status === 401) {
+        // Password rotated on the server — bounce back to the lock screen.
+        setIsThinking(false);
+        relock("The password changed — unlock to keep chatting.");
+        return;
+      }
       if (!res.ok || !res.body) {
         throw new Error((await res.text()) || `Request failed (${res.status})`);
       }
@@ -190,6 +262,14 @@ export default function ChatPage() {
       e.preventDefault();
       void send(input);
     }
+  }
+
+  if (authState === "checking") {
+    // Blank cream frame while localStorage is read — avoids a lock-screen flash.
+    return <div className="h-dvh bg-cream" />;
+  }
+  if (authState === "locked") {
+    return <LockScreen onUnlock={unlock} error={authError} />;
   }
 
   const empty = messages.length === 0;
@@ -308,6 +388,82 @@ export default function ChatPage() {
 }
 
 /* ------------------------------------------------------------------ */
+
+function LockScreen({
+  onUnlock,
+  error,
+}: {
+  onUnlock: (password: string) => Promise<boolean>;
+  error: string;
+}) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [shakeKey, setShakeKey] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (busy || !value) return;
+    setBusy(true);
+    const ok = await onUnlock(value);
+    setBusy(false);
+    if (!ok) {
+      setValue("");
+      setShakeKey((k) => k + 1); // re-trigger the shake animation
+      inputRef.current?.focus();
+    }
+  }
+
+  return (
+    <div className="pt-safe pb-safe flex h-dvh flex-col items-center justify-center bg-cream px-6">
+      <div className="flex size-20 items-center justify-center rounded-full bg-gradient-to-br from-rose to-rose-deep shadow-lg shadow-rose/25">
+        <Heart className="size-10 fill-white text-white" />
+      </div>
+      <h1 className="mt-5 text-[22px] font-semibold">The Sabrina Show AI</h1>
+      <p className="mt-1.5 text-[15px] text-ink-muted">
+        This one's just for you — enter the password.
+      </p>
+
+      <form onSubmit={submit} className="mt-8 w-full max-w-xs">
+        <div key={shakeKey} className={error ? "animate-shake" : undefined}>
+          <div className="relative">
+            <LockKeyhole className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-muted" />
+            <input
+              ref={inputRef}
+              type="password"
+              value={value}
+              autoFocus
+              placeholder="Password"
+              autoComplete="current-password"
+              enterKeyHint="go"
+              onChange={(e) => setValue(e.target.value)}
+              className={`w-full rounded-2xl border bg-white py-3 pl-11 pr-4 outline-none transition placeholder:text-ink-muted ${
+                error
+                  ? "border-red-400 focus:border-red-400"
+                  : "border-cream-deep focus:border-rose/50"
+              }`}
+            />
+          </div>
+        </div>
+
+        {/* Fixed-height slot so the layout doesn't jump when the error appears */}
+        <p className="mt-2 h-5 text-center text-[13px] text-red-500">{error}</p>
+
+        <button
+          type="submit"
+          disabled={busy || !value}
+          className="mt-2 w-full rounded-2xl bg-rose py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] disabled:opacity-40"
+        >
+          {busy ? "Checking…" : "Unlock"}
+        </button>
+      </form>
+
+      <p className="mt-10 text-[12px] text-ink-muted">
+        Kept on this device — you won't be asked again.
+      </p>
+    </div>
+  );
+}
 
 function Bubble({ msg }: { msg: Message }) {
   const isUser = msg.role === "user";

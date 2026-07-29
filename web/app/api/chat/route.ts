@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { ACCESS_HEADER, passwordOk } from "@/lib/auth-server";
 import { SABRINA_SYSTEM_PROMPT } from "@/lib/prompt";
 
 export const runtime = "nodejs"; // buffer image uploads; edge has stricter limits
@@ -27,6 +28,11 @@ type HistoryMessage = { role: "user" | "assistant"; content: string };
  * Streams back plain-text chunks of Sabrina's reply.
  */
 export async function POST(req: Request) {
+  // Auth gate first — block unauthenticated API consumption outright.
+  if (!passwordOk(req.headers.get(ACCESS_HEADER))) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const form = await req.formData();
   const message = ((form.get("message") as string) ?? "").trim();
   const images = (form.getAll("images") as File[]).filter((f) =>

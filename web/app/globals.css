@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  /* Warm cream/rose palette — matches the desktop app */
+  --color-cream: #faf6f1;
+  --color-cream-deep: #f0e9e1;
+  --color-rose: #e85d75;
+  --color-rose-deep: #c94a61;
+  --color-rose-soft: #fdeef1;
+  --color-ink: #2b2926;
+  --color-ink-muted: #8a8580;
+
+  --animate-bubble-in: bubble-in 0.25s ease-out;
+  --animate-typing-dot: typing-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none; /* stop iOS rubber-banding the whole page */
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+    sans-serif;
+}
+
+/* iOS zooms any focused input under 16px — keep inputs at 16px exactly. */
+textarea,
+input {
+  font-size: 16px;
+}
+
+/* Safe-area helpers for the notch / home indicator (viewport-fit=cover). */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+
+/* Native-feeling momentum scrolling inside the chat pane. */
+.chat-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbars on mobile for a cleaner native look. */
+.chat-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}

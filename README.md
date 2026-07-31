@@ -1,5 +1,21 @@
 # Sabrina Zohar Advice Chatbot
 
+## Screenshots
+
+**iOS web app (PWA)** — password gate, welcome screen, screenshot attachments, chat:
+
+| Lock screen | Welcome | Attach screenshots | Advice |
+|---|---|---|---|
+| ![Lock screen](docs/screenshots/shot-web-lock.png) | ![Welcome](docs/screenshots/shot-web-welcome.png) | ![Attach](docs/screenshots/shot-web-attach.png) | ![Chat](docs/screenshots/shot-web-chat.png) |
+
+**Windows desktop app** — light and dark themes:
+
+| Light | Dark |
+|---|---|
+| ![Desktop light](docs/screenshots/shot-desktop-light.png) | ![Desktop dark](docs/screenshots/shot-desktop-dark.png) |
+
+*Demo content shown; advice text in these captures is staged for illustration.*
+
 An end-to-end pipeline that (1) collects and transcribes content from "The Sabrina
 Zohar Show" (YouTube + a mock Instagram/Facebook adapter), (2) structures it into a
 unified JSONL corpus, and (3) serves a Claude-powered advice interface that answers
